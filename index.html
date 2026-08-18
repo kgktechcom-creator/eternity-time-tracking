@@ -143,6 +143,28 @@
     border-top-color: #fff; animation: spin 0.8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------- Admin ---------- */
+  .admin-btn {
+    background: rgba(255,255,255,.12); border: none; color: #fff; font-size: 12px;
+    padding: 8px 12px; border-radius: 10px; cursor: pointer; font-weight: 700;
+  }
+  .topbar-actions { display: flex; gap: 8px; align-items: flex-start; }
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(15,23,42,.6); z-index: 55;
+    align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-card {
+    background: #fff; border-radius: 20px; padding: 24px; width: 100%; max-width: 400px;
+    max-height: 90vh; overflow-y: auto;
+  }
+  .modal-card h3 { margin: 0 0 16px; font-size: 18px; color: #0f172a; }
+  .modal-card .field label { color: #334155; }
+  .modal-card .field input {
+    background: #f8fafc; color: #0f172a; border: 1px solid var(--border);
+  }
+  .modal-actions { display: flex; gap: 10px; margin-top: 6px; }
+  .modal-actions .btn { flex: 1; }
 </style>
 </head>
 <body>
@@ -178,7 +200,10 @@
           <h2 id="dashName">—</h2>
           <div class="role" id="dashRole">—</div>
         </div>
-        <button class="logout-btn" id="logoutBtn">Sair</button>
+        <div class="topbar-actions">
+          <button class="admin-btn" id="adminBtn" style="display:none;">+ Funcionário</button>
+          <button class="logout-btn" id="logoutBtn">Sair</button>
+        </div>
       </div>
       <div class="clock">
         <div class="time" id="clockTime">00:00:00</div>
@@ -225,6 +250,35 @@
   <div class="camera-controls">
     <div class="camera-hint" id="cameraHint">Centralize seu rosto e tire a foto</div>
     <button class="snap-btn" id="snapBtn"></button>
+  </div>
+</div>
+
+<!-- ADMIN: CADASTRAR FUNCIONÁRIO -->
+<div id="adminModal" class="modal-overlay">
+  <div class="modal-card">
+    <h3>Cadastrar Funcionário</h3>
+    <div class="error-msg" id="adminError"></div>
+    <div class="info-msg" id="adminInfo"></div>
+    <div class="field">
+      <label>Nome completo</label>
+      <input type="text" id="newName" placeholder="Ex: Maria Silva" />
+    </div>
+    <div class="field">
+      <label>Usuário (login)</label>
+      <input type="text" id="newUsername" placeholder="Ex: maria" autocomplete="off" />
+    </div>
+    <div class="field">
+      <label>Senha inicial</label>
+      <input type="password" id="newPassword" placeholder="Senha temporária" autocomplete="new-password" />
+    </div>
+    <div class="field">
+      <label>Valor por hora (R$)</label>
+      <input type="number" id="newRate" placeholder="Ex: 25" step="0.01" min="0" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="adminCancelBtn">Cancelar</button>
+      <button class="btn btn-primary" id="adminSaveBtn">Cadastrar</button>
+    </div>
   </div>
 </div>
 
@@ -325,9 +379,74 @@
     $("dashScreen").style.display = "flex";
     $("dashName").textContent = state.user.name;
     $("dashRole").textContent = state.user.role === "Admin" ? "Administrador" : "Funcionário";
+    $("adminBtn").style.display = state.user.role === "Admin" ? "inline-block" : "none";
     refreshStatus();
     startClock();
   }
+
+  // ───────── admin: cadastrar funcionário ─────────
+  $("adminBtn").addEventListener("click", function () {
+    $("newName").value = "";
+    $("newUsername").value = "";
+    $("newPassword").value = "";
+    $("newRate").value = "";
+    $("adminError").style.display = "none";
+    $("adminInfo").style.display = "none";
+    $("adminModal").style.display = "flex";
+  });
+
+  $("adminCancelBtn").addEventListener("click", function () {
+    $("adminModal").style.display = "none";
+  });
+
+  $("adminSaveBtn").addEventListener("click", function () {
+    var name = $("newName").value.trim();
+    var username = $("newUsername").value.trim();
+    var password = $("newPassword").value;
+    var hourlyRate = $("newRate").value;
+    var errEl = $("adminError");
+    var infoEl = $("adminInfo");
+    errEl.style.display = "none";
+    infoEl.style.display = "none";
+
+    if (!name || !username || !password) {
+      errEl.textContent = "Preencha nome, usuário e senha.";
+      errEl.style.display = "block";
+      return;
+    }
+
+    $("adminSaveBtn").disabled = true;
+    showLoading(true);
+    callApi({
+      action: "admin_addUser",
+      adminId: state.user.id,
+      name: name,
+      username: username,
+      password: password,
+      hourlyRate: hourlyRate
+    })
+      .then(function (res) {
+        showLoading(false);
+        $("adminSaveBtn").disabled = false;
+        if (!res.ok) {
+          errEl.textContent = res.error || "Não foi possível cadastrar.";
+          errEl.style.display = "block";
+          return;
+        }
+        infoEl.textContent = "✅ " + res.name + " cadastrado(a) com sucesso (ID " + res.userId + ").";
+        infoEl.style.display = "block";
+        $("newName").value = "";
+        $("newUsername").value = "";
+        $("newPassword").value = "";
+        $("newRate").value = "";
+      })
+      .catch(function () {
+        showLoading(false);
+        $("adminSaveBtn").disabled = false;
+        errEl.textContent = "Erro de conexão. Tenta de novo.";
+        errEl.style.display = "block";
+      });
+  });
 
   function refreshStatus() {
     $("dashError").style.display = "none";
@@ -481,7 +600,10 @@
         }
         $("dashInfo").style.display = "block";
         if (action === "checkin") {
-          $("dashInfo").textContent = "✅ Entrada registrada às " + res.checkInTime;
+          var projTxt = res.project
+            ? " · Projeto detectado: " + res.project + (res.projectDistance != null ? " (" + res.projectDistance + "m)" : "")
+            : "";
+          $("dashInfo").textContent = "✅ Entrada registrada às " + res.checkInTime + projTxt;
         } else {
           $("dashInfo").textContent = "✅ Saída registrada às " + res.checkOutTime +
             " · " + res.hoursWorked + "h trabalhadas · " + fmtBRL(res.earnings);
